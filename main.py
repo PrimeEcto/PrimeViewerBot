@@ -14,6 +14,8 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
@@ -38,6 +40,7 @@ class ViewerWorker(QThread):
             driver.execute_script(f"window.scrollTo(0, {scroll_amount});")
             time.sleep(random.uniform(2, 4))
             
+            # Simulate mouse movement
             driver.execute_script("""
                 var event = new MouseEvent('mousemove', {
                     'view': window,
@@ -49,13 +52,18 @@ class ViewerWorker(QThread):
                 document.dispatchEvent(event);
             """, random.randint(100, 800), random.randint(100, 600))
             
+            # Occasionally change quality
             if random.random() < 0.3:
-                quality_options = ['160p', '360p', '480p', '720p']
-                selected_quality = random.choice(quality_options)
-                driver.execute_script(f"document.querySelector('.quality-picker-button')?.click();")
-                time.sleep(1)
-                driver.execute_script(f"document.querySelector('[data-quality=\"{selected_quality}\"]')?.click();")
+                try:
+                    quality_button = driver.find_element(By.CSS_SELECTOR, '[data-a-target="player-settings-button"]')
+                    quality_button.click()
+                    time.sleep(1)
+                    quality_menu = driver.find_element(By.CSS_SELECTOR, '[data-a-target="player-settings-menu"]')
+                    quality_menu.click()
+                except:
+                    pass
             
+            # Video interaction
             if random.random() < 0.2:
                 driver.execute_script("""
                     var video = document.querySelector('video');
@@ -70,15 +78,17 @@ class ViewerWorker(QThread):
                 
             time.sleep(random.uniform(8, 20))
         except Exception as e:
-            self.progress.emit(f"Activity simulation error for viewer {viewer_index}: {e}")
+            self.progress.emit(f"Activity simulation error for viewer {viewer_index}: {str(e)}")
 
     def setup_chrome_options(self):
         chrome_options = webdriver.ChromeOptions()
         
+        # Anti-detection measures
         chrome_options.add_argument('--disable-blink-features=AutomationControlled')
         chrome_options.add_experimental_option('excludeSwitches', ['enable-automation'])
         chrome_options.add_experimental_option('useAutomationExtension', False)
         
+        # Performance options
         chrome_options.add_argument('--disable-gpu')
         chrome_options.add_argument('--disable-software-rasterizer')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -88,14 +98,18 @@ class ViewerWorker(QThread):
         chrome_options.add_argument('--ignore-certificate-errors')
         chrome_options.add_argument('--mute-audio')
         
+        # Additional stability options
         chrome_options.add_argument('--disable-extensions')
         chrome_options.add_argument('--disable-popup-blocking')
         chrome_options.add_argument('--disable-default-apps')
+        chrome_options.add_argument('--disable-background-networking')
         
+        # Random window size
         width = random.randint(1024, 1920)
         height = random.randint(768, 1080)
         chrome_options.add_argument(f'--window-size={width},{height}')
         
+        # Random user agent
         user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
@@ -105,12 +119,14 @@ class ViewerWorker(QThread):
         chrome_options.add_argument(f'user-agent={random.choice(user_agents)}')
         
         if self.headless:
-            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--headless=new')
         
         return chrome_options
 
     def run(self):
         try:
+            service = Service(ChromeDriverManager().install())
+            
             for i in range(self.viewer_count):
                 if not self.running:
                     break
@@ -118,7 +134,7 @@ class ViewerWorker(QThread):
                 chrome_options = self.setup_chrome_options()
                 
                 try:
-                    driver = webdriver.Chrome(options=chrome_options)
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
                     self.drivers.append(driver)
                     
                     driver.get(self.proxy_url)
@@ -127,10 +143,7 @@ class ViewerWorker(QThread):
                     text_box = wait.until(EC.presence_of_element_located((By.ID, 'url')))
                     
                     twitch_url = f'https://www.twitch.tv/{self.channel}'
-                    for char in twitch_url:
-                        text_box.send_keys(char)
-                        time.sleep(random.uniform(0.1, 0.3))
-                    
+                    text_box.send_keys(twitch_url)
                     text_box.send_keys(Keys.RETURN)
                     
                     self.progress.emit(f"Viewer {i + 1}/{self.viewer_count} initialized successfully")
@@ -141,7 +154,7 @@ class ViewerWorker(QThread):
                         self.simulate_viewer_activity(driver, i)
                     
                 except Exception as e:
-                    self.progress.emit(f"Error initializing viewer {i + 1}: {e}")
+                    self.progress.emit(f"Error initializing viewer {i + 1}: {str(e)}")
                     continue
             
             while self.running:
@@ -216,6 +229,16 @@ class MainWindow(QMainWindow):
                 border-radius: 4px;
                 font-family: monospace;
             }
+            QProgressBar {
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                text-align: center;
+                background-color: #2a2a2a;
+                color: white;
+            }
+            QProgressBar::chunk {
+                background-color: #9147ff;
+            }
         """)
         
         # Title
@@ -281,17 +304,7 @@ class MainWindow(QMainWindow):
         
         # Progress bar
         self.progress_bar = QProgressBar()
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid #3a3a3a;
-                border-radius: 4px;
-                text-align: center;
-                background-color: #2a2a2a;
-            }
-            QProgressBar::chunk {
-                background-color: #9147ff;
-            }
-        """)
+        self.progress_bar.setRange(0, 100)
         layout.addWidget(self.progress_bar)
         
         # Log output
@@ -318,7 +331,8 @@ class MainWindow(QMainWindow):
         self.log_output.append(message)
         
     def update_progress(self, value):
-        self.progress_bar.setValue((value / self.viewers_spin.value()) * 100)
+        progress = int((value / self.viewers_spin.value()) * 100)
+        self.progress_bar.setValue(progress)
         
     def start_viewers(self):
         if not self.channel_input.text():
