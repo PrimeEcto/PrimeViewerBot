@@ -2,3 +2,4 @@ colorama
 pystyle
 selenium
 requests
+webdriver_manager
