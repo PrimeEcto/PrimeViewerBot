@@ -3,3 +3,4 @@ pystyle
 selenium
 requests
 webdriver_manager
+PyQt6
